@@ -87,6 +87,7 @@ Apps Script エディタ → プロジェクトの設定 → スクリプトプ�
 | `installTrigger()` | 1時間毎の仕分けトリガーを設置 |
 | `installDailyReport()` | 毎日18時の日次サマリートリガーを設置 |
 | `removeTrigger()` | 仕分け・日次サマリー両方のトリガーを解除 |
+| `listTriggers()` | 登録済みトリガーを一覧表示（確認用） |
 
 ## 注意
 

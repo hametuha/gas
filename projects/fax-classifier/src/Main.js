@@ -120,3 +120,19 @@ function removeTrigger() {
   const n = deleteTriggersFor_('processFaxFolder') + deleteTriggersFor_('dailyReport');
   console.log(n + '件のトリガーを解除しました。');
 }
+
+/**
+ * 現在登録されているトリガーを一覧表示する（登録確認用）。
+ * ハンドラ名とイベント種別を出す。時間トリガーは種別が CLOCK になる。
+ */
+function listTriggers() {
+  const triggers = ScriptApp.getProjectTriggers();
+  if (!triggers.length) {
+    console.log('トリガーは登録されていません。');
+    return;
+  }
+  console.log(triggers.length + '件のトリガー:');
+  triggers.forEach(function (t) {
+    console.log('・' + t.getHandlerFunction() + ' / ' + t.getEventType());
+  });
+}
