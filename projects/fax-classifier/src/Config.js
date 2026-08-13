@@ -9,7 +9,7 @@
 const CONFIG = {
   // true の間は「判定してログに記録するだけ」で、ファイルは一切移動しない。
   // 精度を数十件確認して納得したら false にする。
-  DRY_RUN: true,
+  DRY_RUN: false,
 
   // 使用する Gemini モデル。マルチモーダルでPDFを直接読める Flash 系。
   // エイリアス 'gemini-flash-latest' を使い、モデルのリタイア（新規キーでの
