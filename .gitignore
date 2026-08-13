@@ -1,0 +1,16 @@
+# === 認証情報：絶対にコミットしない ===
+# clasp のログイン情報（通常は ~/.clasprc.json だが、プロジェクトローカルに置く運用にも備える）
+.clasprc.json
+*.clasprc.json
+# gcloud の direnv 隔離ディレクトリ（認証トークン・アクティブ設定を含む）
+.gcloud/
+
+# === Node ===
+node_modules/
+npm-debug.log*
+
+# === direnv ===
+.envrc.local
+
+# === OS ===
+.DS_Store

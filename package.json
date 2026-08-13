@@ -1,0 +1,17 @@
+{
+  "name": "hametuha-gas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "hametuha.co.jp の Google Workspace に追加する Google Apps Script を一元管理するリポジトリ",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "login": "clasp login",
+    "logout": "clasp logout",
+    "whoami": "clasp login --status || clasp --version"
+  },
+  "devDependencies": {
+    "@google/clasp": "3.3.0"
+  }
+}
