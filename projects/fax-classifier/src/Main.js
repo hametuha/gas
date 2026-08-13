@@ -1,9 +1,10 @@
 /**
  * エントリポイントと運用ユーティリティ。
  *
- * 日常運転: processFaxFolder()（時間トリガーで自動実行）
+ * 日常運転: processFaxFolder()（1時間毎トリガーで自動実行）
+ * 日次通知: dailyReport()（毎日1回トリガーで当日分をメール）
  * 初期設定: setup() を1回実行 → ログシート自動作成 & プロパティ確認
- * 自動化ON: installTrigger() で15分毎トリガーを設置
+ * 自動化ON: installTrigger() + installDailyReport() でトリガーを設置
  */
 
 /**
@@ -18,7 +19,7 @@ function processFaxFolder() {
   }
 
   const rows = [];
-  const unknownItems = [];
+  let unknownCount = 0;
   files.forEach(function (file) {
     const now = new Date();
     let result;
@@ -46,7 +47,7 @@ function processFaxFolder() {
     }
 
     if (key === 'unknown') {
-      unknownItems.push({ name: file.getName(), reason: result.reason, url: file.getUrl() });
+      unknownCount++;
     }
 
     rows.push([now, file.getName(), category.label, result.confidence, movedTo, result.reason, CONFIG.DRY_RUN, file.getUrl()]);
@@ -54,13 +55,9 @@ function processFaxFolder() {
 
   appendLog_(rows);
 
-  // 実際に「不明」へ移動したときだけ通知する（DRY_RUN 中は移動していないので送らない）。
-  if (!CONFIG.DRY_RUN) {
-    notifyUnknown_(unknownItems);
-  }
-
+  // 通知は dailyReport() が当日分をまとめて送る（ここでは即時送信しない）。
   console.log(files.length + '件を処理しました（DRY_RUN=' + CONFIG.DRY_RUN
-    + '、うち不明 ' + unknownItems.length + '件）。ログを確認してください。');
+    + '、うち不明 ' + unknownCount + '件）。ログを確認してください。');
 }
 
 /**
@@ -85,23 +82,41 @@ function setup() {
 }
 
 /**
- * 1時間毎の時間トリガーを設置する（既存の同名トリガーは張り替える）。
- * DRY_RUN で精度を確認し、CONFIG.DRY_RUN を false にしてから実行するのが安全。
+ * 指定ハンドラのトリガーをすべて削除する。
+ * @param {string} handlerName
+ * @return {number} 削除した数
  */
-function installTrigger() {
-  ScriptApp.getProjectTriggers()
-    .filter(function (t) { return t.getHandlerFunction() === 'processFaxFolder'; })
-    .forEach(function (t) { ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger('processFaxFolder').timeBased().everyHours(1).create();
-  console.log('1時間毎のトリガーを設置しました。');
+function deleteTriggersFor_(handlerName) {
+  const targets = ScriptApp.getProjectTriggers()
+    .filter(function (t) { return t.getHandlerFunction() === handlerName; });
+  targets.forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  return targets.length;
 }
 
 /**
- * 時間トリガーを解除する（自動運転を止めたいとき）。
+ * 1時間毎の仕分けトリガーを設置する（既存の同名トリガーは張り替える）。
+ * DRY_RUN で精度を確認し、CONFIG.DRY_RUN を false にしてから実行するのが安全。
+ */
+function installTrigger() {
+  deleteTriggersFor_('processFaxFolder');
+  ScriptApp.newTrigger('processFaxFolder').timeBased().everyHours(1).create();
+  console.log('1時間毎の仕分けトリガーを設置しました。');
+}
+
+/**
+ * 毎日18時（JST）の日次サマリートリガーを設置する。
+ * 時刻を変えたい場合は atHour(18) の数字を変更する。
+ */
+function installDailyReport() {
+  deleteTriggersFor_('dailyReport');
+  ScriptApp.newTrigger('dailyReport').timeBased().atHour(18).everyDays(1).create();
+  console.log('毎日18時の日次サマリートリガーを設置しました。');
+}
+
+/**
+ * この仕分けに関わるトリガー（仕分け・日次サマリー）をすべて解除する。
  */
 function removeTrigger() {
-  const targets = ScriptApp.getProjectTriggers()
-    .filter(function (t) { return t.getHandlerFunction() === 'processFaxFolder'; });
-  targets.forEach(function (t) { ScriptApp.deleteTrigger(t); });
-  console.log(targets.length + '件のトリガーを解除しました。');
+  const n = deleteTriggersFor_('processFaxFolder') + deleteTriggersFor_('dailyReport');
+  console.log(n + '件のトリガーを解除しました。');
 }
