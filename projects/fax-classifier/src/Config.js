@@ -1,8 +1,10 @@
 /**
  * FAX仕分け設定。
  *
- * 秘匿値（APIキー・フォルダID）はコードに書かず、スクリプトプロパティに保存する。
- * 設定は Main.js の setup() を一度実行してから確認すること。
+ * フォルダID群は「どこに仕分けるか」という業務ルーティングそのものなので
+ * コードに置く（このリポジトリは非公開）。
+ * ただし GEMINI_API_KEY だけは秘匿情報なのでコードに書かず、
+ * スクリプトプロパティに保存する（setup() 参照）。
  */
 const CONFIG = {
   // true の間は「判定してログに記録するだけ」で、ファイルは一切移動しない。
@@ -13,19 +15,22 @@ const CONFIG = {
   MODEL: 'gemini-2.5-flash',
 
   // 確信度がこの値未満なら order/return/sales でも「不明」に落とす。
-  // 誤仕分け（例: 注文を返品と判定）は業務事故なので、迷ったら不明に寄せる。
+  // 誤仕分け（例: 受注を返品と判定）は業務事故なので、迷ったら不明に寄せる。
   CONFIDENCE_THRESHOLD: 0.75,
 
   // 1回の実行で処理する最大件数（GASの6分制限対策）。
   MAX_FILES_PER_RUN: 20,
 
-  // 分類キー → 子フォルダ名 / 表示ラベル。
+  // Zapier がFAXを保存する親フォルダ（受信箱）。
+  FAX_FOLDER_ID: '1yQV1cWYboS0WxPsBkBPZIujdyMMDEQDn',
+
+  // 分類キー → 仕分け先フォルダID / 表示ラベル。
   // Gemini はこの4つのキーのいずれかを返す。
   CATEGORIES: {
-    order:   { folder: '注文', label: '書籍の注文' },
-    return:  { folder: '返品', label: '書籍の返品' },
-    sales:   { folder: '営業', label: 'その他営業FAX' },
-    unknown: { folder: '不明', label: '不明・判別不可' },
+    order:   { folderId: '1V6t653K_EqOVzuRq-nzDB0K9KlpLHPZE', label: '書籍の受注' },
+    return:  { folderId: '11xYcgsBqFOSho4u0p6755U_OzxBTTUEx', label: '書籍の返品' },
+    sales:   { folderId: '10I6epEWH4rbfnyCFcIiXMoYQVjzspDxa', label: 'その他営業FAX' },
+    unknown: { folderId: '1-MvbKtPaMG1DYby60U-bnjyPS32sQWaj', label: '不明・判別不可' },
   },
 };
 
@@ -42,6 +47,5 @@ function getRequiredProp_(key) {
   return value;
 }
 
-function getFaxFolderId_()  { return getRequiredProp_('FAX_FOLDER_ID'); }
 function getGeminiApiKey_() { return getRequiredProp_('GEMINI_API_KEY'); }
 function getLogSheetId_()   { return getRequiredProp_('LOG_SHEET_ID'); }

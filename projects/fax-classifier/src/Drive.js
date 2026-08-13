@@ -12,7 +12,7 @@
  * @return {File[]}
  */
 function listUnprocessedFax_() {
-  const folder = DriveApp.getFolderById(getFaxFolderId_());
+  const folder = DriveApp.getFolderById(CONFIG.FAX_FOLDER_ID);
   const iter = folder.getFilesByType(MimeType.PDF);
   const files = [];
   while (iter.hasNext() && files.length < CONFIG.MAX_FILES_PER_RUN) {
@@ -22,22 +22,11 @@ function listUnprocessedFax_() {
 }
 
 /**
- * 分類名の子フォルダを取得する（なければ作成）。
- * @param {string} name 子フォルダ名（例: '注文'）
- * @return {Folder}
- */
-function ensureSubfolder_(name) {
-  const parent = DriveApp.getFolderById(getFaxFolderId_());
-  const iter = parent.getFoldersByName(name);
-  return iter.hasNext() ? iter.next() : parent.createFolder(name);
-}
-
-/**
- * ファイルを子フォルダへ移動する（FAXフォルダ直下から外す）。
+ * ファイルを仕分け先フォルダへ移動する（FAXフォルダ直下から外す）。
  * @param {File} file
- * @param {Folder} targetFolder
+ * @param {string} targetFolderId 仕分け先フォルダのID
  */
-function moveFile_(file, targetFolder) {
-  targetFolder.addFile(file);
-  DriveApp.getFolderById(getFaxFolderId_()).removeFile(file);
+function moveFile_(file, targetFolderId) {
+  DriveApp.getFolderById(targetFolderId).addFile(file);
+  DriveApp.getFolderById(CONFIG.FAX_FOLDER_ID).removeFile(file);
 }

@@ -18,6 +18,7 @@ function processFaxFolder() {
   }
 
   const rows = [];
+  const unknownItems = [];
   files.forEach(function (file) {
     const now = new Date();
     let result;
@@ -38,22 +39,33 @@ function processFaxFolder() {
 
     let movedTo;
     if (CONFIG.DRY_RUN) {
-      movedTo = '（DRY_RUN: ' + category.folder + ' へ移動予定）';
+      movedTo = '（DRY_RUN: ' + category.label + ' へ移動予定）';
     } else {
-      moveFile_(file, ensureSubfolder_(category.folder));
-      movedTo = category.folder;
+      moveFile_(file, category.folderId);
+      movedTo = category.label;
+    }
+
+    if (key === 'unknown') {
+      unknownItems.push({ name: file.getName(), reason: result.reason, url: file.getUrl() });
     }
 
     rows.push([now, file.getName(), category.label, result.confidence, movedTo, result.reason, CONFIG.DRY_RUN, file.getUrl()]);
   });
 
   appendLog_(rows);
-  console.log(files.length + '件を処理しました（DRY_RUN=' + CONFIG.DRY_RUN + '）。ログを確認してください。');
+
+  // 実際に「不明」へ移動したときだけ通知する（DRY_RUN 中は移動していないので送らない）。
+  if (!CONFIG.DRY_RUN) {
+    notifyUnknown_(unknownItems);
+  }
+
+  console.log(files.length + '件を処理しました（DRY_RUN=' + CONFIG.DRY_RUN
+    + '、うち不明 ' + unknownItems.length + '件）。ログを確認してください。');
 }
 
 /**
- * 初期設定。ログシートが無ければ作成し、必須プロパティの設定状況を表示する。
- * FAX_FOLDER_ID と GEMINI_API_KEY は、実行ログに出るURLの手順で手動設定すること。
+ * 初期設定。ログシートが無ければ作成し、APIキーの設定状況を表示する。
+ * GEMINI_API_KEY は「プロジェクトの設定 > スクリプトプロパティ」で手動設定すること。
  */
 function setup() {
   const props = PropertiesService.getScriptProperties();
@@ -66,21 +78,22 @@ function setup() {
     console.log('ログシート: 設定済み');
   }
 
-  ['FAX_FOLDER_ID', 'GEMINI_API_KEY'].forEach(function (key) {
-    console.log(key + ': ' + (props.getProperty(key) ? 'OK' : '未設定 ← プロジェクトの設定 > スクリプトプロパティ で設定してください'));
-  });
+  console.log('GEMINI_API_KEY: '
+    + (props.getProperty('GEMINI_API_KEY')
+      ? 'OK'
+      : '未設定 ← プロジェクトの設定 > スクリプトプロパティ で設定してください'));
 }
 
 /**
- * 15分毎の時間トリガーを設置する（既存の同名トリガーは張り替える）。
+ * 1時間毎の時間トリガーを設置する（既存の同名トリガーは張り替える）。
  * DRY_RUN で精度を確認し、CONFIG.DRY_RUN を false にしてから実行するのが安全。
  */
 function installTrigger() {
   ScriptApp.getProjectTriggers()
     .filter(function (t) { return t.getHandlerFunction() === 'processFaxFolder'; })
     .forEach(function (t) { ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger('processFaxFolder').timeBased().everyMinutes(15).create();
-  console.log('15分毎のトリガーを設置しました。');
+  ScriptApp.newTrigger('processFaxFolder').timeBased().everyHours(1).create();
+  console.log('1時間毎のトリガーを設置しました。');
 }
 
 /**
