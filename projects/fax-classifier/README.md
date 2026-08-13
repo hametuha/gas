@@ -1,7 +1,7 @@
 # fax-classifier — FAX を Gemini で自動仕分け
 
 Drive の「FAX」フォルダに Zapier が保存したPDFを、Gemini で読み取って
-**注文 / 返品 / 営業 / 不明** の子フォルダへ自動仕分けする GAS。
+**受注 / 返品 / 営業 / 不明** の子フォルダへ自動仕分けする GAS。
 
 ```
 [Zapier] FAX添付メール → Drive「FAX」フォルダに保存 + Gmail に "FAX" ラベル
@@ -9,9 +9,13 @@ Drive の「FAX」フォルダに Zapier が保存したPDFを、Gemini で読�
                                 ▼
 [この GAS: 1時間毎トリガー]
   1. FAXフォルダ直下のPDFを列挙（子フォルダ内=処理済みは対象外）
-  2. 各PDFを Gemini(gemini-2.5-flash) で分類 → {category, confidence, reason}
+  2. 各PDFを Gemini(gemini-flash-latest) で分類 → {category, confidence, reason}
   3. 確信度 >= 0.75 のものだけ該当フォルダへ移動。低いものは「不明」へ
   4. 全件を「FAX仕分けログ」スプレッドシートに記録
+
+[この GAS: 毎日18時トリガー]
+  当日分の判定を集計し、1件以上あれば内訳（受注/返品/営業/不明）を
+  1通のメールにまとめて送る。不明があれば理由とリンクも添える。0件の日は送らない。
 
 フォルダID（親=受信箱・子=受注/返品/営業/不明）は Config.js に直書き。
 このリポジトリは非公開のため、業務ルーティングとしてコードに置く。
@@ -24,8 +28,9 @@ Drive の「FAX」フォルダに Zapier が保存したPDFを、Gemini で読�
 - **確信度で足切り**: `CONFIDENCE_THRESHOLD`(0.75) 未満は order/return/sales でも「不明」に落とす。
   注文を返品と取り違える誤仕分けを避けるため、迷ったら不明に寄せる。
 - **監査ログ**: DRY_RUN でも本番でも全件を記録。判定理由(reason)も残すので後から検証できる。
-- **不明の通知**: 本番運転で「不明」に入ったFAXがあれば、実行ユーザー（または
-  `NOTIFY_EMAIL` プロパティ宛）にまとめてメール通知する。DRY_RUN 中は移動しないので送らない。
+- **日次サマリー**: 毎日18時に当日分の内訳をまとめて実行ユーザー（または `NOTIFY_EMAIL`
+  プロパティ宛）にメール。不明は理由・リンク付き。0件の日は送らない。1日1通に集約し
+  即時通知の乱発を避ける。
 
 ## セットアップ
 
@@ -50,7 +55,7 @@ Apps Script エディタ → プロジェクトの設定 → スクリプトプ�
 | プロパティ名 | 値 |
 | --- | --- |
 | `GEMINI_API_KEY` | AI Studio で発行したキー（**秘匿。コードには書かない**） |
-| `NOTIFY_EMAIL` | （任意）不明通知の宛先。未設定なら実行ユーザー宛 |
+| `NOTIFY_EMAIL` | （任意）日次サマリーの宛先。未設定なら実行ユーザー宛 |
 
 `LOG_SHEET_ID` は `setup()` が自動作成する。フォルダIDは `Config.js` に直書き済み。
 
@@ -67,8 +72,10 @@ Apps Script エディタ → プロジェクトの設定 → スクリプトプ�
 
 ### 6. 自動運転ON
 
-`installTrigger()` を実行すると1時間毎に自動処理が走る。
-止めたいときは `removeTrigger()`。
+- `installTrigger()` → 1時間毎に仕分けが走る
+- `installDailyReport()` → 毎日18時に日次サマリーメールが飛ぶ
+
+両方を実行しておく。止めたいときは `removeTrigger()`（両方まとめて解除）。
 
 ## 関数一覧
 
@@ -76,8 +83,10 @@ Apps Script エディタ → プロジェクトの設定 → スクリプトプ�
 | --- | --- |
 | `setup()` | 初期化（ログシート作成・プロパティ確認） |
 | `processFaxFolder()` | 本体。分類して仕分け（DRY_RUN 尊重） |
-| `installTrigger()` | 15分毎トリガーを設置 |
-| `removeTrigger()` | トリガー解除 |
+| `dailyReport()` | 当日分を集計して日次サマリーをメール（0件の日は送らない） |
+| `installTrigger()` | 1時間毎の仕分けトリガーを設置 |
+| `installDailyReport()` | 毎日18時の日次サマリートリガーを設置 |
+| `removeTrigger()` | 仕分け・日次サマリー両方のトリガーを解除 |
 
 ## 注意
 
