@@ -12,7 +12,10 @@ const CONFIG = {
   DRY_RUN: true,
 
   // 使用する Gemini モデル。マルチモーダルでPDFを直接読める Flash 系。
-  MODEL: 'gemini-2.5-flash',
+  // エイリアス 'gemini-flash-latest' を使い、モデルのリタイア（新規キーでの
+  // 提供打ち切り）で止まらないようにする。挙動を凍結したい場合は
+  // 'gemini-3.6-flash' 等の具体バージョンにピン留めする（将来の打ち切り対応が必要）。
+  MODEL: 'gemini-flash-latest',
 
   // 確信度がこの値未満なら order/return/sales でも「不明」に落とす。
   // 誤仕分け（例: 受注を返品と判定）は業務事故なので、迷ったら不明に寄せる。
