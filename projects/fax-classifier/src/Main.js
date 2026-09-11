@@ -1,11 +1,28 @@
 /**
  * エントリポイントと運用ユーティリティ。
  *
- * 日常運転: processFaxFolder()（1時間毎トリガーで自動実行）
+ * 日常運転: runPipeline()（1時間毎トリガーで自動実行）
+ *           = ステージ1 分類 → ステージ2 受注明細の抽出
  * 日次通知: dailyReport()（毎日1回トリガーで当日分をメール）
  * 初期設定: setup() を1回実行 → ログシート自動作成 & プロパティ確認
+ *           その後 refreshBookMaster() で書籍マスタを取り込む
  * 自動化ON: installTrigger() + installDailyReport() でトリガーを設置
  */
+
+/**
+ * 日常運転の本体。分類してから、受注に落ちたものの明細を抽出する。
+ *
+ * 抽出が落ちても分類の結果は残したいので、ステージ2の失敗は握って
+ * ログに出すだけにする（次回の実行でリトライされる）。
+ */
+function runPipeline() {
+  processFaxFolder();
+  try {
+    extractOrders();
+  } catch (e) {
+    console.error('受注明細の抽出に失敗しました（分類は完了しています）: ' + e);
+  }
+}
 
 /**
  * FAXフォルダ直下のPDFを分類し、（DRY_RUN でなければ）子フォルダへ仕分ける。
@@ -79,6 +96,17 @@ function setup() {
     + (props.getProperty('GEMINI_API_KEY')
       ? 'OK'
       : '未設定 ← プロジェクトの設定 > スクリプトプロパティ で設定してください'));
+
+  // ステージ2（受注明細の抽出）の準備状況。
+  console.log('ORDER.EXTRACTED_FOLDER_ID: '
+    + (CONFIG.ORDER.EXTRACTED_FOLDER_ID
+      ? 'OK'
+      : '未設定 ← 受注フォルダ内に「抽出済み」フォルダを作り Config.js に設定してください'));
+
+  const master = getBookMaster_();
+  const count = Object.keys(master).length;
+  console.log('書籍マスタ: ' + count + '件'
+    + (count ? '' : ' ← refreshBookMaster() を実行して openBD から取り込んでください'));
 }
 
 /**
@@ -94,13 +122,15 @@ function deleteTriggersFor_(handlerName) {
 }
 
 /**
- * 1時間毎の仕分けトリガーを設置する（既存の同名トリガーは張り替える）。
- * DRY_RUN で精度を確認し、CONFIG.DRY_RUN を false にしてから実行するのが安全。
+ * 1時間毎のパイプライン（分類→受注抽出）トリガーを設置する。
+ * 既存の同名トリガー、および旧構成の processFaxFolder 単体トリガーは張り替える。
+ * DRY_RUN で精度を確認してから実行するのが安全。
  */
 function installTrigger() {
-  deleteTriggersFor_('processFaxFolder');
-  ScriptApp.newTrigger('processFaxFolder').timeBased().everyHours(1).create();
-  console.log('1時間毎の仕分けトリガーを設置しました。');
+  deleteTriggersFor_('runPipeline');
+  deleteTriggersFor_('processFaxFolder'); // 旧構成のトリガーが残っていれば剥がす
+  ScriptApp.newTrigger('runPipeline').timeBased().everyHours(1).create();
+  console.log('1時間毎のパイプライン（分類→受注抽出）トリガーを設置しました。');
 }
 
 /**
@@ -114,9 +144,11 @@ function installDailyReport() {
 }
 
 /**
- * この仕分けに関わるトリガー（仕分け・日次サマリー）をすべて解除する。
+ * この仕組みに関わるトリガー（パイプライン・日次サマリー）をすべて解除する。
  */
 function removeTrigger() {
-  const n = deleteTriggersFor_('processFaxFolder') + deleteTriggersFor_('dailyReport');
+  const n = deleteTriggersFor_('runPipeline')
+    + deleteTriggersFor_('processFaxFolder')
+    + deleteTriggersFor_('dailyReport');
   console.log(n + '件のトリガーを解除しました。');
 }

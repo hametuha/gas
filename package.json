@@ -9,7 +9,8 @@
   "scripts": {
     "login": "clasp login",
     "logout": "clasp logout",
-    "whoami": "clasp login --status || clasp --version"
+    "whoami": "clasp login --status || clasp --version",
+    "test": "node projects/fax-classifier/tests/validate.test.js && node projects/fax-classifier/tests/bookmaster.test.js"
   },
   "devDependencies": {
     "@google/clasp": "3.3.0"

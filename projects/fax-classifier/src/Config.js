@@ -35,6 +35,32 @@ const CONFIG = {
     sales:   { folderId: '10I6epEWH4rbfnyCFcIiXMoYQVjzspDxa', label: 'その他営業FAX' },
     unknown: { folderId: '1-MvbKtPaMG1DYby60U-bnjyPS32sQWaj', label: '不明・判別不可' },
   },
+
+  // --- ステージ2: 受注FAXからの明細抽出 ---
+  // ステージ1（分類）が order フォルダへ入れたPDFを読み、注文明細を表にする。
+  ORDER: {
+    // 分類とは独立に立ち上げるため専用フラグ。
+    // true の間は読み取ってシートに書くだけで、ファイルを移動しない。
+    DRY_RUN: true,
+
+    // 受注フォルダ直下 = 未抽出、この「抽出済み」フォルダへ移動 = 抽出済み。
+    // ※「対応済み」ではない。発送などの業務完了は受注明細シートの
+    //   ステータス列で人間が管理する（抽出完了と混同すると出荷漏れになる）。
+    EXTRACTED_FOLDER_ID: '',
+
+    // ログスプレッドシート内のシート名。
+    MASTER_SHEET_NAME: '書籍マスタ',
+    LINES_SHEET_NAME: '受注明細',
+
+    // 破滅派のISBN出版社記号（978-4-905197）。書籍記号は2桁なので刊行物は最大100点。
+    ISBN_PREFIX: '9784905197',
+
+    // 明細の確信度がこれ未満なら「要確認」を立てる。
+    CONFIDENCE_THRESHOLD: 0.75,
+
+    // これを超える冊数は誤読を疑って「要確認」を立てる。
+    MAX_QUANTITY: 100,
+  },
 };
 
 /**

@@ -40,18 +40,58 @@ function dailyReport() {
     }
   });
 
-  if (total === 0) {
-    console.log('本日のFAXはありませんでした（メール送信なし）。');
+  const orders = summarizeOrders_(today, tz);
+
+  // 分類も抽出も動きが無かった日は送らない。
+  // 過去分の再抽出だけが走った日は、FAX 0件でも報告する価値がある。
+  if (total === 0 && orders.lineCount === 0) {
+    console.log('本日のFAXも受注抽出もありませんでした（メール送信なし）。');
     return;
   }
 
   MailApp.sendEmail(
     PropertiesService.getScriptProperties().getProperty('NOTIFY_EMAIL')
       || Session.getEffectiveUser().getEmail(),
-    '[FAX仕分け] ' + today + ' のFAX ' + total + '件',
-    buildReportBody_(today, total, counts, unknowns)
+    '[FAX仕分け] ' + today + ' のFAX ' + total + '件'
+      + (orders.flagged.length ? '（受注に要確認 ' + orders.flagged.length + '件）' : ''),
+    buildReportBody_(today, total, counts, unknowns, orders)
   );
-  console.log('日次サマリーを送信しました（' + total + '件）。');
+  console.log('日次サマリーを送信しました（FAX ' + total + '件 / 受注明細 '
+    + orders.lineCount + '件）。');
+}
+
+/**
+ * 当日分の受注明細を集計する。
+ *
+ * @param {string} today yyyy-MM-dd
+ * @param {string} tz タイムゾーン
+ * @return {{lineCount: number, faxCount: number,
+ *           flagged: Array<{name: string, title: string, reason: string, url: string}>}}
+ */
+function summarizeOrders_(today, tz) {
+  const sheet = getSheetByName_(CONFIG.ORDER.LINES_SHEET_NAME, ORDER_HEADER);
+  const lastRow = sheet.getLastRow();
+  const empty = { lineCount: 0, faxCount: 0, flagged: [] };
+  if (lastRow < 2) return empty;
+
+  const values = sheet.getRange(2, 1, lastRow - 1, ORDER_HEADER.length).getValues();
+  const faxNames = {};
+  const flagged = [];
+  let lineCount = 0;
+
+  values.forEach(function (row) {
+    const when = row[0];
+    if (!(when instanceof Date)) return;
+    if (Utilities.formatDate(when, tz, 'yyyy-MM-dd') !== today) return;
+
+    lineCount++;
+    faxNames[row[1]] = true;
+    if (row[14] === '要確認') {
+      flagged.push({ name: row[1], title: row[10], reason: row[15], url: row[2] });
+    }
+  });
+
+  return { lineCount: lineCount, faxCount: Object.keys(faxNames).length, flagged: flagged };
 }
 
 /**
@@ -61,9 +101,10 @@ function dailyReport() {
  * @param {number} total
  * @param {Object} counts 判定ラベル → 件数
  * @param {Array<{name: string, reason: string, url: string}>} unknowns
+ * @param {{lineCount: number, faxCount: number, flagged: Array}} orders 受注抽出の集計
  * @return {string}
  */
-function buildReportBody_(today, total, counts, unknowns) {
+function buildReportBody_(today, total, counts, unknowns, orders) {
   const ordered = [
     CONFIG.CATEGORIES.order.label,
     CONFIG.CATEGORIES.return.label,
@@ -86,6 +127,23 @@ function buildReportBody_(today, total, counts, unknowns) {
       + unknowns.map(function (it) {
           return '・' + it.name + '\n  理由: ' + it.reason + '\n  ' + it.url;
         }).join('\n\n');
+  }
+
+  if (orders && orders.lineCount) {
+    body += '\n\n― 受注抽出 ―\n'
+      + '  FAX ' + orders.faxCount + '件から ' + orders.lineCount + '明細を抽出\n'
+      + '  うち要確認: ' + orders.flagged.length + '件';
+
+    if (orders.flagged.length) {
+      // 冊数は機械で検算できない。要確認は必ず人がPDFと突き合わせること。
+      body += '\n\n― 受注の要確認 ' + orders.flagged.length + '件 ―\n'
+        + orders.flagged.map(function (it) {
+            return '・' + it.name + (it.title ? '「' + it.title + '」' : '')
+              + '\n  理由: ' + it.reason + '\n  ' + it.url;
+          }).join('\n\n');
+    }
+    body += '\n\n※ 受注明細シートは「人間が検算する下書き」です。'
+      + '\n   とくに冊数は機械で検算できません。発送前に必ずPDFと突き合わせてください。';
   }
   return body;
 }

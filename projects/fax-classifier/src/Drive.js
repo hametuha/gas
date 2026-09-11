@@ -27,6 +27,34 @@ function listUnprocessedFax_() {
  * @param {string} targetFolderId 仕分け先フォルダのID
  */
 function moveFile_(file, targetFolderId) {
-  DriveApp.getFolderById(targetFolderId).addFile(file);
-  DriveApp.getFolderById(CONFIG.FAX_FOLDER_ID).removeFile(file);
+  moveFileBetween_(file, CONFIG.FAX_FOLDER_ID, targetFolderId);
+}
+
+/**
+ * ファイルを別のフォルダへ移動する。
+ * 追加してから外す順序を守る（先に外すと、失敗時にマイドライブ直下へ迷子になる）。
+ * @param {File} file
+ * @param {string} fromFolderId 現在の親
+ * @param {string} toFolderId 移動先
+ */
+function moveFileBetween_(file, fromFolderId, toFolderId) {
+  DriveApp.getFolderById(toFolderId).addFile(file);
+  DriveApp.getFolderById(fromFolderId).removeFile(file);
+}
+
+/**
+ * 受注フォルダ直下の未抽出PDFを最大 MAX_FILES_PER_RUN 件返す。
+ *
+ * ステージ1と同じ考え方。受注フォルダ「直下」= まだ明細を抜いていない、
+ * 「抽出済み」子フォルダへ移した時点で処理済みとみなす。
+ * @return {File[]}
+ */
+function listUnextractedOrders_() {
+  const folder = DriveApp.getFolderById(CONFIG.CATEGORIES.order.folderId);
+  const iter = folder.getFilesByType(MimeType.PDF);
+  const files = [];
+  while (iter.hasNext() && files.length < CONFIG.MAX_FILES_PER_RUN) {
+    files.push(iter.next());
+  }
+  return files;
 }
