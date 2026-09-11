@@ -35,16 +35,24 @@ function processFaxFolder() {
     return;
   }
 
-  const rows = [];
   let unknownCount = 0;
+  let processed = 0;
+  const startedAt = Date.now();
+
   files.forEach(function (file) {
+    // 実行時間の予算を超えたら打ち切る（残りは次回のトリガーで処理される）。
+    if (Date.now() - startedAt > RUN_BUDGET_MS) {
+      console.warn('実行時間の予算を超えたため分類を中断します。');
+      return;
+    }
+
     const now = new Date();
     let result;
     try {
       result = classifyFax_(file.getBlob());
     } catch (e) {
       console.error('分類失敗: ' + file.getName() + ' :: ' + e);
-      rows.push([now, file.getName(), 'ERROR', '', '(移動せず)', String(e), CONFIG.DRY_RUN, file.getUrl()]);
+      appendLog_([[now, file.getName(), 'ERROR', '', '(移動せず)', String(e), CONFIG.DRY_RUN, file.getUrl()]]);
       return;
     }
 
@@ -55,25 +63,27 @@ function processFaxFolder() {
     }
     const category = CONFIG.CATEGORIES[key];
 
-    let movedTo;
-    if (CONFIG.DRY_RUN) {
-      movedTo = '（DRY_RUN: ' + category.label + ' へ移動予定）';
-    } else {
-      moveFile_(file, category.folderId);
-      movedTo = category.label;
-    }
+    const movedTo = CONFIG.DRY_RUN
+      ? '（DRY_RUN: ' + category.label + ' へ移動予定）'
+      : category.label;
 
     if (key === 'unknown') {
       unknownCount++;
     }
 
-    rows.push([now, file.getName(), category.label, result.confidence, movedTo, result.reason, CONFIG.DRY_RUN, file.getUrl()]);
+    // 記録してから移動する。逆順だと、書き込み前に打ち切られたとき
+    // ファイルだけ仕分け済みになり監査ログに残らない。
+    appendLog_([[now, file.getName(), category.label, result.confidence, movedTo,
+      result.reason, CONFIG.DRY_RUN, file.getUrl()]]);
+    processed++;
+
+    if (!CONFIG.DRY_RUN) {
+      moveFile_(file, category.folderId);
+    }
   });
 
-  appendLog_(rows);
-
   // 通知は dailyReport() が当日分をまとめて送る（ここでは即時送信しない）。
-  console.log(files.length + '件を処理しました（DRY_RUN=' + CONFIG.DRY_RUN
+  console.log(processed + '/' + files.length + '件を処理しました（DRY_RUN=' + CONFIG.DRY_RUN
     + '、うち不明 ' + unknownCount + '件）。ログを確認してください。');
 }
 

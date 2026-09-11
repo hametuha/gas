@@ -87,7 +87,7 @@ const TITLE_SIMILARITY_THRESHOLD = 0.5;
  * 明細1行を検算し、「要確認」の理由を列挙する。
  * 空配列が返れば機械的には問題なし（＝冊数の目視だけで済む）。
  *
- * @param {{isbn: *, title: *, quantity: *, confidence: *}} line Geminiが返した明細
+ * @param {{isbn: *, isbnSource: *, title: *, quantity: *, confidence: *}} line Geminiが返した明細
  * @param {{distributor: *, storeCode: *, storeName: *}} fax FAX単位の情報
  * @param {Object.<string, {title: string}>} master ISBN → 書籍マスタ
  * @return {{issues: string[], isbn: string, masterTitle: string}}
@@ -106,6 +106,14 @@ function validateLine_(line, fax, master) {
     issues.push('自社刊行物のISBNではない');
   } else if (!entry) {
     issues.push('書籍マスタに存在しないISBN');
+  }
+
+  // --- ISBNの出所 ---
+  // ISBNがFAXに書かれておらず書名から引いた場合、マスタとの書名一致は
+  // 定義上かならず成立するので検算にならない（循環参照）。
+  // この行の正しさは人が書名を見るしかないため、必ず要確認に落とす。
+  if (line.isbnSource === 'inferred') {
+    issues.push('ISBNはFAXに無く書名から推定（書名の目視確認が必要）');
   }
 
   // --- 書名 ---

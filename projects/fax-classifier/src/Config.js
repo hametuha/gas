@@ -22,7 +22,9 @@ const CONFIG = {
   CONFIDENCE_THRESHOLD: 0.75,
 
   // 1回の実行で処理する最大件数（GASの6分制限対策）。
-  MAX_FILES_PER_RUN: 20,
+  // Gemini が 503 を返すとリトライのバックオフで1件に数十秒かかるため、
+  // 欲張らない。取り切れなかった分は次回のトリガーで処理される。
+  MAX_FILES_PER_RUN: 10,
 
   // Zapier がFAXを保存する親フォルダ（受信箱）。
   FAX_FOLDER_ID: '1yQV1cWYboS0WxPsBkBPZIujdyMMDEQDn',

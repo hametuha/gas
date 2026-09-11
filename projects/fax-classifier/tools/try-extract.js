@@ -17,9 +17,16 @@ const path = require('path');
 const SRC = path.join(__dirname, '..', 'src');
 const FIXTURE = path.join(__dirname, '..', 'tests', 'openbd.fixture.json');
 
-const apiKey = process.env.GEMINI_API_KEY;
+// 鍵は環境変数か、GEMINI_API_KEY_FILE が指すファイルから読む。
+// コマンドラインに直書きするとシェル履歴に残るので、ファイル経由を勧める。
+const apiKey = (process.env.GEMINI_API_KEY
+  || (process.env.GEMINI_API_KEY_FILE
+      && fs.readFileSync(process.env.GEMINI_API_KEY_FILE, 'utf8'))
+  || '').trim();
 if (!apiKey) {
-  console.error('GEMINI_API_KEY が未設定です。\n  export GEMINI_API_KEY=\'...\'');
+  console.error('APIキーが未設定です。次のどちらかを指定してください。\n'
+    + '  export GEMINI_API_KEY_FILE=~/.gemini.key   # 推奨（履歴に残らない）\n'
+    + '  export GEMINI_API_KEY=...');
   process.exit(1);
 }
 const pdfs = process.argv.slice(2);
@@ -83,12 +90,25 @@ async function extract(pdfPath) {
     },
   };
 
-  const res = await fetch(
-    'https://generativelanguage.googleapis.com/v1beta/models/'
-      + gas.CONFIG.MODEL + ':generateContent?key=' + encodeURIComponent(apiKey),
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-  );
-  if (!res.ok) throw new Error('Gemini ' + res.status + ': ' + (await res.text()).slice(0, 500));
+  // 503（モデル過負荷）は実際に起きる。本番(src/Gemini.js)と同じく粘る。
+  const RETRIABLE = [429, 500, 502, 503, 504];
+  const MAX_ATTEMPTS = 4;
+  let res, lastError = '';
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    res = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/'
+        + gas.CONFIG.MODEL + ':generateContent?key=' + encodeURIComponent(apiKey),
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+    );
+    if (res.ok) break;
+    lastError = 'Gemini ' + res.status + ': ' + (await res.text()).slice(0, 300);
+    if (!RETRIABLE.includes(res.status)) throw new Error(lastError);
+    if (attempt === MAX_ATTEMPTS) throw new Error(lastError + '（' + MAX_ATTEMPTS + '回試行）');
+    const wait = 2000 * Math.pow(2, attempt - 1);
+    console.log(dim('  ' + res.status + ' のため ' + wait + 'ms 待って再試行 ('
+      + attempt + '/' + (MAX_ATTEMPTS - 1) + ')'));
+    await new Promise((r) => setTimeout(r, wait));
+  }
   const json = await res.json();
   const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error('想定外の応答: ' + JSON.stringify(json).slice(0, 500));
@@ -115,8 +135,8 @@ async function extract(pdfPath) {
       + (fs.statSync(pdfPath).size / 1024).toFixed(0) + 'KB'));
 
     console.log('\n[FAX単位]');
-    [['日付', r.faxDate], ['取次', r.distributor], ['書店コード', r.storeCode],
-     ['書店名', r.storeName], ['担当者', r.staff], ['作業コード', r.workCode]]
+    [['日付', r.faxDate], ['取次', r.distributor], ['番線', r.banselCode],
+     ['書店コード', r.storeCode], ['書店名', r.storeName], ['担当者', r.staff]]
       .forEach(([k, v]) => console.log('  ' + k.padEnd(12, '　').slice(0, 6) + ' : ' + show(v)));
 
     const fax = { storeCode: r.storeCode, storeName: r.storeName };
@@ -127,6 +147,7 @@ async function extract(pdfPath) {
       if (v.issues.length) totalFlagged++;
       console.log('  ' + (i + 1) + '. ' + show(line.title));
       console.log('     ISBN ' + show(line.isbn)
+        + dim(' [' + (line.isbnSource || '出所不明') + ']')
         + (v.masterTitle ? dim('  → マスタ: ' + v.masterTitle) : '')
         + '   冊数 ' + show(line.quantity)
         + '   確信度 ' + show(line.confidence));

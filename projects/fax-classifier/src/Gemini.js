@@ -1,9 +1,66 @@
 /**
- * Gemini によるFAX分類。
+ * Gemini 呼び出しの共通処理と、FAX分類。
  *
- * PDFを base64 で inlineData に載せ、構造化出力(JSON)で
- * {category, confidence, reason} を得る。
+ * PDFを base64 で inlineData に載せ、構造化出力(JSON)を得る。
+ * 受注明細の抽出は OrderGemini.js（プロンプトもスキーマも別物）。
  */
+
+/** 一時的な障害とみなしてリトライするHTTPステータス。 */
+const GEMINI_RETRIABLE = [429, 500, 502, 503, 504];
+
+/** リトライ回数と初回待機(ms)。待機は倍々に伸ばす。 */
+const GEMINI_MAX_ATTEMPTS = 4;
+const GEMINI_BACKOFF_MS = 2000;
+
+/**
+ * Gemini の generateContent を叩き、構造化出力のJSONを返す。
+ *
+ * 503（モデル過負荷）は実運用で普通に起きる。ここで諦めると
+ * その回のFAXが丸ごと未処理になるため、指数バックオフで粘る。
+ * 恒久的なエラー（400番台の設定ミス等）は即座に投げる。
+ *
+ * @param {Object} payload generateContent のリクエストボディ
+ * @return {Object} パース済みの構造化出力
+ */
+function callGemini_(payload) {
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/'
+    + CONFIG.MODEL + ':generateContent?key=' + encodeURIComponent(getGeminiApiKey_());
+
+  let lastError = '';
+  for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt++) {
+    const res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+    });
+    const code = res.getResponseCode();
+
+    if (code === 200) {
+      const body = JSON.parse(res.getContentText());
+      const text = body.candidates
+        && body.candidates[0]
+        && body.candidates[0].content
+        && body.candidates[0].content.parts[0].text;
+      if (!text) {
+        throw new Error('Gemini から想定外の応答: ' + res.getContentText());
+      }
+      return JSON.parse(text);
+    }
+
+    lastError = 'Gemini API エラー (' + code + '): ' + res.getContentText();
+    if (GEMINI_RETRIABLE.indexOf(code) === -1) {
+      throw new Error(lastError); // 設定ミス等。粘っても直らない。
+    }
+    if (attempt < GEMINI_MAX_ATTEMPTS) {
+      const wait = GEMINI_BACKOFF_MS * Math.pow(2, attempt - 1);
+      console.warn('Gemini が ' + code + ' を返したので ' + wait + 'ms 待って再試行します（'
+        + attempt + '/' + (GEMINI_MAX_ATTEMPTS - 1) + '）。');
+      Utilities.sleep(wait);
+    }
+  }
+  throw new Error(lastError + '（' + GEMINI_MAX_ATTEMPTS + '回試行しても復旧せず）');
+}
 
 /** システムプロンプト。分類基準と「迷ったら不明」の方針を明示する。 */
 const FAX_SYSTEM_PROMPT = [
@@ -27,10 +84,7 @@ const FAX_SYSTEM_PROMPT = [
  * @return {{category: string, confidence: number, reason: string}}
  */
 function classifyFax_(blob) {
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/'
-    + CONFIG.MODEL + ':generateContent?key=' + encodeURIComponent(getGeminiApiKey_());
-
-  const payload = {
+  return callGemini_({
     systemInstruction: { parts: [{ text: FAX_SYSTEM_PROMPT }] },
     contents: [{
       role: 'user',
@@ -52,27 +106,5 @@ function classifyFax_(blob) {
         required: ['category', 'confidence', 'reason'],
       },
     },
-  };
-
-  const res = UrlFetchApp.fetch(url, {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true,
   });
-
-  const code = res.getResponseCode();
-  if (code !== 200) {
-    throw new Error('Gemini API エラー (' + code + '): ' + res.getContentText());
-  }
-
-  const body = JSON.parse(res.getContentText());
-  const text = body.candidates
-    && body.candidates[0]
-    && body.candidates[0].content
-    && body.candidates[0].content.parts[0].text;
-  if (!text) {
-    throw new Error('Gemini から想定外の応答: ' + res.getContentText());
-  }
-  return JSON.parse(text);
 }

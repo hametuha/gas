@@ -137,5 +137,44 @@ const r = ctx.validateLine_(
 ok('ISBNが正規化されて返る', r.isbn === '9784905197041', r.isbn);
 ok('マスタ書名が引かれる', r.masterTitle === 'ギークに銃はいらない', r.masterTitle);
 
+// --- シートの列数整合 ---
+// 列を足し引きしたときに行ビルダとヘッダがズレるのは静かに壊れる典型なので、
+// ORDER_HEADER と各行ビルダの幅が一致することを機械的に確認する。
+console.log('\n[受注明細シートの列数整合]');
+{
+  const orderCode = ['Config.js', 'Order.js']
+    .map((f) => fs.readFileSync(path.join(SRC, f), 'utf8')).join('\n');
+  const o = new Function('validateLine_', 'listUnextractedOrders_', 'getBookMaster_',
+    'moveFileBetween_', 'appendRows_', 'console',
+    orderCode + '\nreturn { ORDER_HEADER, faxRow_, errorRow_ };')(
+      () => ({ issues: [], isbn: '', masterTitle: '' }), () => [], () => ({}),
+      () => {}, () => {}, { log() {}, warn() {}, error() {} });
+
+  const file = { getName: () => 'a.pdf', getUrl: () => 'https://example.com/a' };
+  const fax = { date: '', distributor: '', bansel: '', storeCode: '', storeName: '', staff: '' };
+  const W = o.ORDER_HEADER.length;
+
+  ok('ヘッダは19列', W === 19, W);
+  ok('faxRow_ は共通部9列', o.faxRow_(new Date(), file, fax).length === 9,
+    o.faxRow_(new Date(), file, fax).length);
+  ok('errorRow_ がヘッダ幅に一致', o.errorRow_(new Date(), file, 'x').length === W,
+    o.errorRow_(new Date(), file, 'x').length + ' vs ' + W);
+  // 明細行・明細ゼロ行は faxRow_(9) + 追加列 で組む。追加列は10でなければならない。
+  ok('明細行の追加列は10（9+10=19）', W - 9 === 10, W - 9);
+}
+
+// --- ISBNの出所 ---
+console.log('\n[ISBNの出所]');
+ok('書名から推定したISBNは要確認になる',
+  V({ isbn: '9784905197041', isbnSource: 'inferred', title: 'ギークに銃はいらない',
+      quantity: 3, confidence: 0.95 })
+    .some((s) => s.startsWith('ISBNはFAXに無く書名から推定')));
+ok('文書から読んだISBNは要確認にならない',
+  V({ isbn: '9784905197041', isbnSource: 'document', title: 'ギークに銃はいらない',
+      quantity: 3, confidence: 0.95 }).length === 0);
+ok('出所が無い明細は従来どおり扱う（後方互換）',
+  V({ isbn: '9784905197041', title: 'ギークに銃はいらない', quantity: 3, confidence: 0.95 })
+    .length === 0);
+
 console.log('\n=== ' + pass + ' passed / ' + fail + ' failed ===');
 process.exit(fail ? 1 : 0);

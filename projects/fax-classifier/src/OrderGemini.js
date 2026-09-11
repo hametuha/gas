@@ -42,14 +42,25 @@ function buildOrderPrompt_(master) {
     'ただし、リストにない書籍が注文されている場合もあります。その場合は',
     '**リストの書籍に無理に寄せず**、FAXに書かれている書名・ISBNをそのまま返してください。',
     '',
+    '【番線印の読み方】',
+    '注文書には「番線印」というスタンプが押されている。ここに取次・番線・書店が入る。',
+    '- 番線: アルファベットと数字の記号（例: D68-03、B36-17、93L80）。',
+    '- 書店コード: 書店を示す数字（例: 147-640、125-000、12368）。これが作業コードでもある。',
+    '- 取次: 社名の文字（日販・トーハン等）が無くても、**番線印の中のロゴマーク**で',
+    '        判別できることが多い。ロゴからも判定してよい。それでも不明なら null。',
+    '',
     '【各項目の説明】',
     '- faxDate:     FAXまたは伝票に記載された日付。YYYY-MM-DD 形式。年が無ければ null。',
     '- distributor: 取次会社名（日本出版販売／トーハン／楽天ブックスネットワーク 等）。',
-    '- storeCode:   取次の書店コード（帳合コード）。数字列をそのまま。',
+    '               社名の記載が無くても番線印のロゴから判別できればそれを答える。',
+    '- banselCode:  番線印の記号部分（例: D68-03、B36-17、93L80）。無ければ null。',
+    '- storeCode:   番線印の書店を示す数字（＝作業コード）。ハイフンは残してよい。',
     '- storeName:   注文元の書店名。',
     '- staff:       担当者名。記載がなければ null。',
-    '- workCode:    伝票上の「作業コード」欄の値。記載がなければ null。',
-    '- lines[].isbn:       13桁のISBN（ハイフンなし）。読めなければ null。',
+    '- lines[].isbn:       13桁のISBN（ハイフンなし）。',
+    '- lines[].isbnSource: ISBNをどう得たか。文書に印字・記載されていたなら "document"、',
+    '                      書名から上記リストを引いて補ったなら "inferred"、',
+    '                      どちらでもなく特定できなければ null。**正直に申告すること**。',
     '- lines[].title:      FAXに書かれている書名。',
     '- lines[].quantity:   注文冊数。**手書き数字の誤読が最も危険な項目**。',
     '                      1と7、3と5、0と6などが紛らわしい場合は confidence を必ず下げること。',
@@ -67,23 +78,24 @@ const ORDER_RESPONSE_SCHEMA = {
     storeCode:   { type: 'string', nullable: true },
     storeName:   { type: 'string', nullable: true },
     staff:       { type: 'string', nullable: true },
-    workCode:    { type: 'string', nullable: true },
+    banselCode:  { type: 'string', nullable: true },
     lines: {
       type: 'array',
       items: {
         type: 'object',
         properties: {
           isbn:       { type: 'string', nullable: true },
+          isbnSource: { type: 'string', nullable: true, enum: ['document', 'inferred'] },
           title:      { type: 'string', nullable: true },
           quantity:   { type: 'integer', nullable: true },
           confidence: { type: 'number' },
         },
-        required: ['isbn', 'title', 'quantity', 'confidence'],
+        required: ['isbn', 'isbnSource', 'title', 'quantity', 'confidence'],
       },
     },
     note: { type: 'string' },
   },
-  required: ['faxDate', 'distributor', 'storeCode', 'storeName', 'staff', 'workCode', 'lines', 'note'],
+  required: ['faxDate', 'distributor', 'banselCode', 'storeCode', 'storeName', 'staff', 'lines', 'note'],
 };
 
 /**
@@ -91,14 +103,11 @@ const ORDER_RESPONSE_SCHEMA = {
  *
  * @param {Blob} blob application/pdf の Blob
  * @param {Object.<string, {title: string, author: string}>} master 書籍マスタ
- * @return {{faxDate: ?string, distributor: ?string, storeCode: ?string, storeName: ?string,
- *           staff: ?string, workCode: ?string, lines: Object[], note: string}}
+ * @return {{faxDate: ?string, distributor: ?string, banselCode: ?string, storeCode: ?string,
+ *           storeName: ?string, staff: ?string, lines: Object[], note: string}}
  */
 function extractOrder_(blob, master) {
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/'
-    + CONFIG.MODEL + ':generateContent?key=' + encodeURIComponent(getGeminiApiKey_());
-
-  const payload = {
+  const parsed = callGemini_({
     systemInstruction: { parts: [{ text: buildOrderPrompt_(master) }] },
     contents: [{
       role: 'user',
@@ -112,30 +121,8 @@ function extractOrder_(blob, master) {
       responseMimeType: 'application/json',
       responseSchema: ORDER_RESPONSE_SCHEMA,
     },
-  };
-
-  const res = UrlFetchApp.fetch(url, {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true,
   });
 
-  const code = res.getResponseCode();
-  if (code !== 200) {
-    throw new Error('Gemini API エラー (' + code + '): ' + res.getContentText());
-  }
-
-  const body = JSON.parse(res.getContentText());
-  const text = body.candidates
-    && body.candidates[0]
-    && body.candidates[0].content
-    && body.candidates[0].content.parts[0].text;
-  if (!text) {
-    throw new Error('Gemini から想定外の応答: ' + res.getContentText());
-  }
-
-  const parsed = JSON.parse(text);
   if (!Array.isArray(parsed.lines)) parsed.lines = [];
   return parsed;
 }

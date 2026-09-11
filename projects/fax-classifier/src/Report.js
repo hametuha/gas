@@ -86,8 +86,8 @@ function summarizeOrders_(today, tz) {
 
     lineCount++;
     faxNames[row[1]] = true;
-    if (row[14] === '要確認') {
-      flagged.push({ name: row[1], title: row[10], reason: row[15], url: row[2] });
+    if (row[15] === '要確認') {
+      flagged.push({ name: row[1], title: row[11], reason: row[16], url: row[2] });
     }
   });
 

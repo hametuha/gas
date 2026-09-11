@@ -5,6 +5,10 @@
 # gcloud の direnv 隔離ディレクトリ（認証トークン・アクティブ設定を含む）
 .gcloud/
 
+# === 作業用 ===
+# 動作確認に使う実物のFAXなど、業務データを置く場所
+/tmp/
+
 # === Node ===
 node_modules/
 npm-debug.log*
