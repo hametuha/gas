@@ -22,7 +22,9 @@ const CONFIG = {
   CONFIDENCE_THRESHOLD: 0.75,
 
   // 1回の実行で処理する最大件数（GASの6分制限対策）。
-  MAX_FILES_PER_RUN: 20,
+  // Gemini が 503 を返すとリトライのバックオフで1件に数十秒かかるため、
+  // 欲張らない。取り切れなかった分は次回のトリガーで処理される。
+  MAX_FILES_PER_RUN: 10,
 
   // Zapier がFAXを保存する親フォルダ（受信箱）。
   FAX_FOLDER_ID: '1yQV1cWYboS0WxPsBkBPZIujdyMMDEQDn',
@@ -34,6 +36,34 @@ const CONFIG = {
     return:  { folderId: '11xYcgsBqFOSho4u0p6755U_OzxBTTUEx', label: '書籍の返品' },
     sales:   { folderId: '10I6epEWH4rbfnyCFcIiXMoYQVjzspDxa', label: 'その他営業FAX' },
     unknown: { folderId: '1-MvbKtPaMG1DYby60U-bnjyPS32sQWaj', label: '不明・判別不可' },
+  },
+
+  // --- ステージ2: 受注FAXからの明細抽出 ---
+  // ステージ1（分類）が order フォルダへ入れたPDFを読み、注文明細を表にする。
+  ORDER: {
+    // 分類とは独立に立ち上げるため専用フラグ。
+    // true の間は読み取ってシートに書くだけで、ファイルを移動しない。
+    // 注意: true のままトリガーを張ると、ファイルが移動しないため毎時
+    // 同じPDFを再抽出し、重複行とGemini課金が積み上がる。手動実行専用と考える。
+    DRY_RUN: false,
+
+    // 受注フォルダ直下 = 未抽出、この「抽出済み」フォルダへ移動 = 抽出済み。
+    // ※「対応済み」ではない。発送などの業務完了は受注明細シートの
+    //   ステータス列で人間が管理する（抽出完了と混同すると出荷漏れになる）。
+    EXTRACTED_FOLDER_ID: '1-VObWm53b8Dx_trEEuyWtIeg_Q91uVoq',
+
+    // ログスプレッドシート内のシート名。
+    MASTER_SHEET_NAME: '書籍マスタ',
+    LINES_SHEET_NAME: '受注明細',
+
+    // 破滅派のISBN出版社記号（978-4-905197）。書籍記号は2桁なので刊行物は最大100点。
+    ISBN_PREFIX: '9784905197',
+
+    // 明細の確信度がこれ未満なら「要確認」を立てる。
+    CONFIDENCE_THRESHOLD: 0.75,
+
+    // これを超える冊数は誤読を疑って「要確認」を立てる。
+    MAX_QUANTITY: 100,
   },
 };
 
